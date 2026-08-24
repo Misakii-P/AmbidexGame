@@ -509,7 +509,7 @@ function renderResultsTable() {
 
   // Build: image as template background + overlaid values
   let html = '<div class="results-wrap">';
-  html += '<img src="/results-template.jpg" class="results-bg" alt="">';
+  html += '<img src="/img/results-template.jpg" class="results-bg" alt="">';
   html += '<div class="results-overlay">';
   parts.forEach(p => {
     html += `<div class="over-cell ${p.cls}" style="left:${p.x}px;top:${p.y}px;width:${p.w}px;height:${p.h}px">${p.content}</div>`;

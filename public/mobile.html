@@ -7,29 +7,29 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@300;400;600;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="style-mobile.css">
-<link rel="icon" type="image/png" href="/favicon.png">
-<script src="/socket.io.min.js"></script>
-<script src="/game.js"></script>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/style-mobile.css">
+<link rel="icon" type="image/png" href="/img/favicon.png">
+<script src="/vendor/socket.io.min.js"></script>
+<script src="/js/game.js"></script>
 </head>
 <body>
 <div class="container">
 
-  <audio id="voteSound" preload="auto" src="/result.wav"></audio>
-  <audio id="resultSound" preload="auto" src="/resound.wav"></audio>
-  <audio id="startSound" preload="auto" src="/start.wav"></audio>
-  <audio id="voteSelectSound" preload="auto" src="/vote.wav"></audio>
-  <audio id="titleSound" preload="auto" src="/title.wav"></audio>
-  <audio id="connectedSound" preload="auto" src="/connected.wav"></audio>
-  <audio id="wrongSound" preload="auto" src="/wrong.wav"></audio>
-  <audio id="selectionSound" preload="auto" src="/selection.wav"></audio>
+  <audio id="voteSound" preload="auto" src="/sfx/result.wav"></audio>
+  <audio id="resultSound" preload="auto" src="/sfx/resound.wav"></audio>
+  <audio id="startSound" preload="auto" src="/sfx/start.wav"></audio>
+  <audio id="voteSelectSound" preload="auto" src="/sfx/vote.wav"></audio>
+  <audio id="titleSound" preload="auto" src="/sfx/title.wav"></audio>
+  <audio id="connectedSound" preload="auto" src="/sfx/connected.wav"></audio>
+  <audio id="wrongSound" preload="auto" src="/sfx/wrong.wav"></audio>
+  <audio id="selectionSound" preload="auto" src="/sfx/selection.wav"></audio>
   <div id="screenOverlay" style="position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:200;transition:opacity 0.3s;"></div>
 
   <!-- Connection Screen -->
   <div id="mobileConnect" class="section active">
     <div class="terminal-start">
-      <img src="/VLR_logo.png" alt="VLR" class="start-logo">
+      <img src="/img/VLR_logo.png" alt="VLR" class="start-logo">
       <div class="start-subtitle">Ambidex Game</div>
       <div class="connect-screen">
         <div class="terminal-prompt">Enter Server IP<span class="cursor-blink">_</span></div>

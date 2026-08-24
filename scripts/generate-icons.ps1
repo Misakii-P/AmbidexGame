@@ -1,5 +1,5 @@
 Add-Type -AssemblyName System.Drawing
-$fs = [System.IO.File]::OpenRead((Resolve-Path "public\icon.ico").Path)
+$fs = [System.IO.File]::OpenRead((Resolve-Path "public\icons\icon.ico").Path)
 $bf = new-object System.IO.BinaryReader($fs)
 $h = $bf.ReadBytes($fs.Length)
 $fs.Close()

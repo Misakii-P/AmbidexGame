@@ -3,7 +3,7 @@ const path = require('path');
 const { rcedit } = require('rcedit');
 
 const exePath = path.join(__dirname, '..', 'dist', 'AmbidexGame.exe');
-const icoPath = path.join(__dirname, '..', 'public', 'icon.ico');
+const icoPath = path.join(__dirname, '..', 'public', 'icons', 'icon.ico');
 
 // Wait for pkg to release the file
 setTimeout(async () => {

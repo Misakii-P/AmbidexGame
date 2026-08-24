@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const pngPath = path.join(__dirname, '..', 'public', 'icon.png');
-const icoPath = path.join(__dirname, '..', 'public', 'icon.ico');
+const pngPath = path.join(__dirname, '..', 'public', 'icons', 'icon.png');
+const icoPath = path.join(__dirname, '..', 'public', 'icons', 'icon.ico');
 
 const png = fs.readFileSync(pngPath);
 const size = png.length;

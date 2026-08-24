@@ -16,6 +16,8 @@ I thought it would be a highly interesting concept to take into a LAN game. Mayb
 
 - **Desktop exe**: Runs as server + host UI in a frameless window (only allows one instance per computer, localhost exists for browser clients on port 3000)
 - **Android APK**: Join-only client with a simple UI
+- **Wii U Homebrew**: Join-only client with dual-screen support (TV + DRC)
+- **Nintendo 3DS Homebrew**: Join-only client with dual-screen support (top + bottom)
 - **LAN multiplayer**: No internet required, works over local network
 - **Terminal-style UI**: Source Code Pro font, teal color scheme, retro terminal aesthetic
 - **Ambidex gameplay**: Ally/Betray votes, slot pairings, real-time results reveal
@@ -46,6 +48,14 @@ npm run build
 npx cap sync android
 cd android
 ./gradlew assembleDebug
+
+# Build Wii U homebrew (requires devkitPro with wiiu-dev)
+cd wiiu
+make
+
+# Build 3DS homebrew (requires devkitPro with 3ds-dev)
+cd 3ds
+make
 ```
 
 ## Controls
@@ -60,17 +70,32 @@ cd android
 ```
 ambidex-game/
 ├── server.js              # Express + Socket.IO server
-├── public/                # Web client files
+├── public/                # Web client files (served statically)
 │   ├── index.html         # Desktop/web client
 │   ├── mobile.html        # Android client
-│   ├── game.js            # Game logic + socket handlers
-│   ├── style.css          # Desktop styles
-│   ├── style-mobile.css   # Mobile styles
-│   ├── music/             # OST tracks
-│   └── *.wav              # Sound effects
+│   ├── css/               # style.css + style-mobile.css
+│   ├── js/game.js         # Game logic + socket handlers
+│   ├── vendor/            # Vendored libs (socket.io.min.js)
+│   ├── img/               # Backgrounds, logo, favicon
+│   ├── icons/             # App/exe icons (used by build scripts)
+│   ├── sfx/               # Sound effects (.wav)
+│   └── music/             # OST tracks (.mp3)
 ├── android/               # Capacitor Android project
+├── wiiu/                  # Wii U homebrew client (unfinished, gitignored)
+│   ├── source/            # C source code
+│   └── Makefile           # devkitPro build
+├── 3ds/                   # Nintendo 3DS homebrew client
+│   ├── source/            # C source code
+│   ├── gfx/               # Screen images + tex3ds files
+│   ├── romfs/             # Source WAVs (embedded at build time)
+│   ├── tools/gen_wavs.ps1 # Regenerates source/wav_data.c
+│   └── Makefile           # devkitARM build
+├── dist/                  # Build outputs (gitignored)
 ├── scripts/
-│   └── prebuild.js        # Nexe icon patching
+│   ├── prebuild.js        # Nexe icon patching
+│   ├── patch-exe.js       # Icon + version resources via rcedit
+│   ├── patch-gui.js       # Flips exe subsystem to GUI (no console)
+│   └── make-ico.js / generate-icons.ps1  # Icon generation
 └── capacitor.config.ts    # Capacitor configuration
 ```
 
@@ -80,6 +105,8 @@ ambidex-game/
 - **Client**: Vanilla JS, CSS, Socket.IO Client
 - **Desktop**: Nexe (bundles server into Windows exe)
 - **Android**: Capacitor v8 (wraps web client as native APK)
+- **Wii U**: devkitPro + libctru + SDL2 (homebrew)
+- **3DS**: devkitPro + libctru (homebrew, framebuffer rendering)
 
 ## Attribution
 

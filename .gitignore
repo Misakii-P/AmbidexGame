@@ -1,9 +1,25 @@
 node_modules/
 dist/
+*.apk
 .env
 *.log
+*.err
 .DS_Store
 Thumbs.db
+
+# Wii U client (unfinished, local-only)
+wiiu/
+
+# 3DS build outputs
+3ds/build/
+3ds/*.elf
+3ds/*.3dsx
+3ds/*.smdh
+3ds/*.lst
+3ds/*.t3x
+3ds/*.o
+3ds/*.d
+3ds/*.h
 
 # Android build outputs
 android/.gradle/
