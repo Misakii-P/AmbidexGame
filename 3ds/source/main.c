@@ -20,6 +20,10 @@ extern const u8 topbg_t3x[];
 extern const u8 topbg_t3x_end[];
 extern const u8 botbg_t3x[];
 extern const u8 botbg_t3x_end[];
+extern const u8 abgamelogo_t3x[];
+extern const u8 abgamelogo_t3x_end[];
+extern const u8 warningmsg_t3x[];
+extern const u8 warningmsg_t3x_end[];
 
 #define SERVER_PORT 3002
 #define MAX_PLAYERS 16
@@ -38,6 +42,7 @@ enum View {
     VIEW_SLOTS,
     VIEW_LOBBY,
     VIEW_SETUP,
+    VIEW_VOTEREADY,
     VIEW_VOTE,
     VIEW_RESULTS,
     VIEW_STANDINGS,
@@ -60,6 +65,20 @@ struct GameResult {
 };
 
 static enum View g_view = VIEW_IP;
+static int g_fadePhase = 2;   /* 0 idle, 1 fade-out, 2 fade-in */
+static int g_fadeAlpha = 255; /* black overlay alpha 0..255 */
+static enum View g_fadeNext = VIEW_IP;
+
+static void transitionTo(enum View v)
+{
+    if (g_fadePhase == 0 && v != g_view) {
+        g_fadePhase = 1;
+        g_fadeAlpha = 0;
+    } else if (g_fadePhase == 2 && v != g_view) {
+        g_fadePhase = 1;
+    }
+    g_fadeNext = v;
+}
 
 static int g_sock = -1;
 static int g_connecting = 0;
@@ -87,6 +106,8 @@ static int g_octets[4] = {192, 168, 1, 100};
 static int g_selectedSlot = 0;
 static int g_voteChoice = 0;
 static int g_votedLocal = 0;
+static int g_voteReady = 0;
+static int g_readyGlow = 0;
 static char g_prevPhase[16] = "";
 static int g_prevMySlot = -1;
 static u32 g_frame = 0;
@@ -99,7 +120,7 @@ static int g_socInited = 0;
 static u32 g_socErr = 0;
 
 static C3D_RenderTarget *s_top, *s_bot;
-static C2D_SpriteSheet s_topSheet, s_botSheet;
+static C2D_SpriteSheet s_topSheet, s_botSheet, s_logoSheet, s_warnSheet;
 static C2D_TextBuf s_textBuf;
 
 #define MAX_WAVS 8
@@ -678,16 +699,17 @@ static void updateView(void)
     }
 
     if (g_haveState) {
+        if (strcmp(g_phase, "voting")) g_voteReady = 0;
         if (!joined) {
             if (g_view != VIEW_ERROR && g_view != VIEW_IP)
-                g_view = VIEW_SLOTS;
+                transitionTo(VIEW_SLOTS);
         } else {
-            if (!strcmp(g_phase, "lobby"))          g_view = VIEW_LOBBY;
-            else if (!strcmp(g_phase, "roundSetup")) g_view = VIEW_SETUP;
-            else if (!strcmp(g_phase, "voting"))     g_view = VIEW_VOTE;
-            else if (!strcmp(g_phase, "results"))    g_view = VIEW_RESULTS;
-            else if (!strcmp(g_phase, "roundEnd"))   g_view = VIEW_STANDINGS;
-            else                                     g_view = VIEW_LOBBY;
+            if (!strcmp(g_phase, "lobby"))          transitionTo(VIEW_LOBBY);
+            else if (!strcmp(g_phase, "roundSetup")) transitionTo(VIEW_SETUP);
+            else if (!strcmp(g_phase, "voting"))     transitionTo(g_voteReady ? VIEW_VOTE : VIEW_VOTEREADY);
+            else if (!strcmp(g_phase, "results"))    transitionTo(VIEW_RESULTS);
+            else if (!strcmp(g_phase, "roundEnd"))   transitionTo(VIEW_STANDINGS);
+            else                                     transitionTo(VIEW_LOBBY);
         }
     }
 
@@ -729,6 +751,8 @@ static void disconnect(void)
     g_haveState = 0;
     g_mySlotId = -1;
     g_votedLocal = 0;
+    g_voteReady = 0;
+    g_readyGlow = 0;
     g_selectedSlot = 0;
     g_phase[0] = 0;
     g_prevPhase[0] = 0;
@@ -738,7 +762,7 @@ static void disconnect(void)
 static void leaveGame(void)
 {
     disconnect();
-    g_view = VIEW_IP;
+    transitionTo(VIEW_IP);
 }
 
 static void connectToServer(void)
@@ -754,7 +778,7 @@ static void connectToServer(void)
             showBanner("SOC init failed (%08X)", g_socErr);
         else
             showBanner("SOC buffer alloc failed");
-        g_view = VIEW_IP;
+        transitionTo(VIEW_IP);
         return;
     }
     snprintf(ip, sizeof(ip), "%d.%d.%d.%d",
@@ -762,7 +786,7 @@ static void connectToServer(void)
     g_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (g_sock < 0) {
         showBanner("Socket failed");
-        g_view = VIEW_IP;
+        transitionTo(VIEW_IP);
         return;
     }
     flags = fcntl(g_sock, F_GETFL, 0);
@@ -776,12 +800,12 @@ static void connectToServer(void)
         close(g_sock);
         g_sock = -1;
         showBanner("Connect failed (%s, err %d)", ip, (int)errno);
-        g_view = VIEW_IP;
+        transitionTo(VIEW_IP);
         return;
     }
     g_connecting = 1;
     g_connWait = 450;
-    g_view = VIEW_CONNECTING;
+    transitionTo(VIEW_CONNECTING);
 }
 
 static int ipPrompt(void)
@@ -848,12 +872,12 @@ static void tryRecv(void)
     } else if (n == 0) {
         snprintf(g_errorMsg, sizeof(g_errorMsg), "Disconnected from host");
         disconnect();
-        g_view = VIEW_ERROR;
+        transitionTo(VIEW_ERROR);
     } else {
         if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINPROGRESS) {
             snprintf(g_errorMsg, sizeof(g_errorMsg), "Network error (%d)", (int)errno);
             disconnect();
-            g_view = VIEW_ERROR;
+            transitionTo(VIEW_ERROR);
         }
     }
 }
@@ -873,22 +897,45 @@ static void drawBotBg(void)
 static void drawRoster(float cx, float y, int highlightMe)
 {
     int i;
+    float xL = cx - 130.0f, xR = cx + 130.0f;
+    float rowH = 18.0f;
+    int showPts = 0;
+    for (i = 0; i < g_numPlayers && i < MAX_PLAYERS; i++)
+        if (g_players[i].points) { showPts = 1; break; }
+    if (highlightMe && showPts) {
+        drawText(xL + 14.0f, y, 0.36f, COL_DIM, "PLAYER");
+        drawText(xR - 34.0f, y, 0.36f, COL_DIM, "PTS");
+        C2D_DrawRectSolid(xL, y + 13.0f, 0.15f, xR - xL, 1.0f, COL_LINE);
+        y += 18.0f;
+    }
     for (i = 0; i < g_numPlayers && i < MAX_PLAYERS; i++) {
         struct Player *pl = &g_players[i];
+        struct Slot *sl = findSlot(pl->id);
         int me = highlightMe && pl->id == g_mySlotId;
-        if (me) drawTextC(cx, y, 0.45f, COL_SEL, "> %s  [%d] <", pl->name, pl->points);
-        else    drawTextC(cx, y, 0.45f, COL_TEXT, "%s  [%d]", pl->name, pl->points);
-        y += 17.0f;
+        u32 nameCol = me ? COL_SEL : (sl && !sl->connected ? COL_DIM : COL_TEXT);
+        char pts[16];
+        float w;
+        if ((i & 1) == 0)
+            C2D_DrawRectSolid(xL, y - 3.0f, 0.12f, xR - xL, rowH - 2.0f,
+                              C2D_Color32(0xFF, 0xFF, 0xFF, 0x0B));
+        if (me)
+            drawText(xL, y, 0.46f, COL_SEL, ">");
+        drawText(xL + 12.0f, y, me ? 0.46f : 0.44f, nameCol, "%.18s", pl->name);
+        if (highlightMe && showPts) {
+            snprintf(pts, sizeof(pts), "%d", pl->points);
+            w = textWidth(pts, 0.44f);
+            drawText(xR - w, y, 0.44f, me ? COL_SEL : COL_DIM, "%s", pts);
+        }
+        y += rowH;
     }
 }
 
 static void drawTopIp(void)
 {
     drawTopBg();
-    drawTextC(TOP_W/2, 46.0f, 0.85f, COL_TEXT, "AMBIDEX GAME");
-    drawTextC(TOP_W/2, 104.0f, 0.42f, COL_DIM, "Enter the host IP address");
-    drawTextC(TOP_W/2, 126.0f, 0.42f, COL_DIM, "on the touch screen below.");
-    drawTextC(TOP_W/2, 216.0f, 0.34f, s_audioStat[4]=='o' ? COL_DIM : COL_ERR, "%s", s_audioStat);
+    if (s_logoSheet)
+        C2D_DrawImageAt(C2D_SpriteSheetGetImage(s_logoSheet, 0), 0.0f, 0.0f, 0.15f,
+                        NULL, 1.0f, 1.0f);
 }
 
 static void drawTopConnecting(void)
@@ -906,8 +953,7 @@ static void drawTopConnecting(void)
 static void drawTopSlots(void)
 {
     drawTopBg();
-    header(TOP_W/2, "SELECT SLOT", "Pick a free slot on the touch screen");
-    drawRoster(TOP_W/2, 66.0f, 0);
+    drawRoster(TOP_W/2, 40.0f, 0);
 }
 
 static void drawTopLobby(void)
@@ -934,6 +980,14 @@ static void drawTopSetup(void)
         drawTextC(TOP_W/2, y, 0.42f, COL_TEXT, "Solo: %.22s", slotName(g*2+2));
         y += 20.0f;
     }
+}
+
+static void drawTopReady(void)
+{
+    drawTopBg();
+    if (s_warnSheet)
+        C2D_DrawImageAt(C2D_SpriteSheetGetImage(s_warnSheet, 0), 0.0f, 0.0f, 0.15f,
+                        NULL, 1.0f, 1.0f);
 }
 
 static void drawTopVote(void)
@@ -1042,6 +1096,7 @@ static void drawTop(void)
     case VIEW_SLOTS:      drawTopSlots(); break;
     case VIEW_LOBBY:      drawTopLobby(); break;
     case VIEW_SETUP:      drawTopSetup(); break;
+    case VIEW_VOTEREADY:  drawTopReady(); break;
     case VIEW_VOTE:       drawTopVote(); break;
     case VIEW_RESULTS:    drawTopResults(); break;
     case VIEW_STANDINGS:  drawTopStandings(); break;
@@ -1066,7 +1121,6 @@ static void drawBottomIp(void)
                       C2D_Color32(0x10, 0x16, 0x20, 0xE0));
     drawTextC(BOT_W/2, IP_BOX_Y + 9.0f, 0.55f, COL_TEXT, "%d.%d.%d.%d",
               g_octets[0], g_octets[1], g_octets[2], g_octets[3]);
-    drawTextC(BOT_W/2, 152.0f, 0.42f, COL_SEL, "A or tap field: edit & connect");
     drawTextC(BOT_W/2, 214.0f, 0.38f, COL_DIM, "START: exit");
 }
 
@@ -1079,32 +1133,71 @@ static void drawBottomConnecting(void)
     drawTextC(BOT_W/2, 126.0f, 0.4f, COL_DIM, "B: cancel");
 }
 
+#define SLOT_COLS 3
+#define SLOT_ROWS 2
+#define SLOT_CARD_W 82.0f
+#define SLOT_CARD_H 72.0f
+#define COL_CARD_FILL  C2D_Color32(0x07, 0x4C, 0x3D, 0xFF)
+#define COL_CARD_EMPTY C2D_Color32(0x1C, 0x37, 0x31, 0xFF)
+
+static const float slotCardX[SLOT_COLS] = { 17.0f, 120.0f, 222.0f };
+static const float slotCardY[SLOT_ROWS] = { 64.0f, 150.0f };
+
+static int slotCardAt(float tx, float ty)
+{
+    int c, r;
+    for (r = 0; r < SLOT_ROWS; r++) {
+        for (c = 0; c < SLOT_COLS; c++) {
+            float x = slotCardX[c], y = slotCardY[r];
+            if (tx >= x && tx < x + SLOT_CARD_W && ty >= y && ty < y + SLOT_CARD_H)
+                return r * SLOT_COLS + c;
+        }
+    }
+    return -1;
+}
+
 static void drawBottomSlots(void)
 {
-    int i, first, maxRows = 8;
-    float y = 52.0f;
-
+    int i;
     drawBotBg();
-    header(BOT_W/2, "SELECT SLOT", NULL);
-    if (g_selectedSlot >= maxRows) first = g_selectedSlot - maxRows + 1;
-    else first = 0;
-    for (i = first; i < g_slotCount && i < first + maxRows; i++) {
+    drawTextC(BOT_W/2, 10.0f, 0.80f, COL_TEXT, "PICK YOUR SLOT");
+    for (i = 0; i < g_slotCount && i < SLOT_COLS * SLOT_ROWS; i++) {
         struct Slot *s = &g_slots[i];
+        float x = slotCardX[i % SLOT_COLS], y = slotCardY[i / SLOT_COLS];
+        float cx = x + SLOT_CARD_W / 2.0f;
         int sel = (i == g_selectedSlot);
-        u32 col = sel ? COL_SEL : COL_TEXT;
-        if (sel)
-            C2D_DrawRectSolid(12.0f, y - 3.0f, 0.30f, BOT_W - 24.0f, 18.0f, COL_HL);
-        drawText(16.0f, y, 0.4f, sel ? COL_SEL : COL_DIM, "%c", sel ? '>' : ' ');
-        if (!s->name[0])
-            drawText(28.0f, y, 0.4f, COL_DIM, "Slot %d (%s) - empty",
-                s->id, !strcmp(s->type, "pair") ? "pair" : "solo");
-        else if (s->connected)
-            drawText(28.0f, y, 0.4f, COL_DIM, "Slot %d - %.15s [in use]", s->id, s->name);
-        else
-            drawText(28.0f, y, 0.4f, col, "Slot %d - %.15s [JOIN]", s->id, s->name);
-        y += 19.0f;
+        int empty = !s->name[0];
+        u32 fill = empty ? COL_CARD_EMPTY : COL_CARD_FILL;
+        C2D_DrawRectSolid(x + 2.0f, y, 0.13f, SLOT_CARD_W - 4.0f, SLOT_CARD_H, fill);
+        C2D_DrawRectSolid(x, y + 2.0f, 0.13f, SLOT_CARD_W, SLOT_CARD_H - 4.0f, fill);
+        if (sel) {
+            C2D_DrawRectSolid(x - 2.0f, y - 2.0f, 0.14f, SLOT_CARD_W + 4.0f, 2.0f, COL_SEL);
+            C2D_DrawRectSolid(x - 2.0f, y + SLOT_CARD_H, 0.14f, SLOT_CARD_W + 4.0f, 2.0f, COL_SEL);
+            C2D_DrawRectSolid(x - 2.0f, y, 0.14f, 2.0f, SLOT_CARD_H, COL_SEL);
+            C2D_DrawRectSolid(x + SLOT_CARD_W, y, 0.14f, 2.0f, SLOT_CARD_H, COL_SEL);
+        }
+        if (empty) {
+            drawTextC(cx, y + 26.0f, 0.40f, COL_DIM, "Empty slot");
+        } else if (!strcmp(s->type, "pair")) {
+            const char *amp = strstr(s->name, " & ");
+            u32 nameCol = s->connected ? COL_DIM : COL_TEXT;
+            if (amp) {
+                char n2[48];
+                size_t l1 = (size_t)(amp - s->name);
+                if (l1 > 22) l1 = 22;
+                drawTextC(cx, y + 10.0f, 0.42f, nameCol, "%.*s", (int)l1, s->name);
+                snprintf(n2, sizeof(n2), "%s", amp + 3);
+                drawTextC(cx, y + 28.0f, 0.42f, nameCol, "%.20s", n2);
+            } else {
+                drawTextC(cx, y + 19.0f, 0.42f, nameCol, "%.20s", s->name);
+            }
+            drawTextC(cx, y + 48.0f, 0.36f, COL_DIM, "Pair");
+        } else {
+            drawTextC(cx, y + 19.0f, 0.42f, s->connected ? COL_DIM : COL_TEXT,
+                      "%.20s", s->name);
+            drawTextC(cx, y + 48.0f, 0.36f, COL_DIM, "Solo");
+        }
     }
-    drawTextC(BOT_W/2, 218.0f, 0.38f, COL_DIM, "Navigate: D-pad  Join: A  Leave: B");
 }
 
 static void drawBottomLobby(void)
@@ -1117,7 +1210,6 @@ static void drawBottomLobby(void)
         drawTextC(BOT_W/2, 120.0f, 0.42f, COL_TEXT, "Playing as: %.20s", s->name);
     else
         drawTextC(BOT_W/2, 120.0f, 0.42f, COL_TEXT, "Waiting...");
-    drawTextC(BOT_W/2, 216.0f, 0.38f, COL_DIM, "B: leave game");
 }
 
 static void drawBottomSetup(void)
@@ -1126,7 +1218,6 @@ static void drawBottomSetup(void)
     panel(20.0f, 88.0f, BOT_W - 40.0f, 62.0f);
     drawTextC(BOT_W/2, 102.0f, 0.5f, COL_SEL, "ROUND %d", g_currentRound);
     drawTextC(BOT_W/2, 126.0f, 0.4f, COL_DIM, "Host is preparing the round...");
-    drawTextC(BOT_W/2, 216.0f, 0.38f, COL_DIM, "B: leave game");
 }
 
 static void drawBottomVote(void)
@@ -1153,7 +1244,48 @@ static void drawBottomVote(void)
         drawTextC(BOT_W/2, 200.0f, 0.48f, COL_SEL, "Vote submitted!");
     else
         drawTextC(BOT_W/2, 200.0f, 0.4f, COL_DIM, "Up/Down: choose  A: confirm");
-    drawTextC(BOT_W/2, 220.0f, 0.38f, COL_DIM, "B: leave game");
+}
+
+#define READY_BTN_W 220.0f
+#define READY_BTN_H 70.0f
+#define READY_BTN_X ((BOT_W - READY_BTN_W) / 2.0f)
+#define READY_BTN_Y 85.0f
+#define COL_READY      C2D_Color32(0x4B, 0xED, 0xD1, 0xFF)
+#define COL_READY_WRAP C2D_Color32(0x4B, 0xED, 0xD1, 0x66)
+#define COL_READY_GLOW C2D_Color32(0x4B, 0xED, 0xD1, 0x22)
+#define COL_READY_RED  C2D_Color32(0xFF, 0x47, 0x57, 0xFF)
+#define COL_BTN_FILL   C2D_Color32(0x0A, 0x3E, 0x32, 0xFF)
+
+static void chamferRect(float x, float y, float w, float h, u32 col)
+{
+    C2D_DrawRectSolid(x + 2.0f, y, 0.30f, w - 4.0f, h, col);
+    C2D_DrawRectSolid(x, y + 2.0f, 0.30f, w, h - 4.0f, col);
+}
+
+static void drawBottomReady(void)
+{
+    float cx = BOT_W / 2.0f;
+    float bx = READY_BTN_X, by = READY_BTN_Y;
+    u32 edge = COL_READY;
+    u32 redA = 0;
+    drawBotBg();
+    if (g_readyGlow > 0) {
+        int t = 72 - g_readyGlow;
+        int inten = t < 20 ? t * 12 : 200 - (t - 20) * 4;
+        if (inten < 0) inten = 0;
+        if (inten > 200) inten = 200;
+        redA = (u32)inten;
+        edge = COL_READY_RED;
+    }
+    chamferRect(bx - 12.0f, by - 9.0f, READY_BTN_W + 24.0f, READY_BTN_H + 18.0f, COL_READY_GLOW);
+    chamferRect(bx - 7.0f, by - 7.0f, READY_BTN_W + 14.0f, READY_BTN_H + 14.0f, COL_READY_WRAP);
+    chamferRect(bx - 5.0f, by - 5.0f, READY_BTN_W + 10.0f, READY_BTN_H + 10.0f, COL_BTN_FILL);
+    chamferRect(bx, by, READY_BTN_W, READY_BTN_H, edge);
+    chamferRect(bx + 2.0f, by + 2.0f, READY_BTN_W - 4.0f, READY_BTN_H - 4.0f, COL_BTN_FILL);
+    if (redA)
+        C2D_DrawRectSolid(bx + 6.0f, by + 6.0f, 0.32f, READY_BTN_W - 12.0f, READY_BTN_H - 12.0f,
+                          C2D_Color32(0xFF, 0x47, 0x57, redA));
+    drawTextC(cx, by + 30.0f, 0.62f, COL_READY, "START");
 }
 
 static void drawBottomResults(void)
@@ -1177,7 +1309,6 @@ static void drawBottomResults(void)
         drawTextC(BOT_W/2, 108.0f, 0.45f, COL_DIM, "Not paired this round");
     }
     drawTextC(BOT_W/2, 180.0f, 0.42f, COL_DIM, "See results on the top screen");
-    drawTextC(BOT_W/2, 216.0f, 0.38f, COL_DIM, "B: leave game");
 }
 
 static void drawBottomStandings(void)
@@ -1205,7 +1336,6 @@ static void drawBottomStandings(void)
         drawText(BOT_W - 76.0f, y, 0.42f, me ? COL_SEL : COL_TEXT, "%d pts", pl->points);
         y += 18.0f;
     }
-    drawTextC(BOT_W/2, 218.0f, 0.38f, COL_DIM, "B: leave game");
 }
 
 static void drawBottomError(void)
@@ -1232,6 +1362,7 @@ static void drawBottom(void)
     case VIEW_SLOTS:      drawBottomSlots(); break;
     case VIEW_LOBBY:      drawBottomLobby(); break;
     case VIEW_SETUP:      drawBottomSetup(); break;
+    case VIEW_VOTEREADY:  drawBottomReady(); break;
     case VIEW_VOTE:       drawBottomVote(); break;
     case VIEW_RESULTS:    drawBottomResults(); break;
     case VIEW_STANDINGS:  drawBottomStandings(); break;
@@ -1277,12 +1408,14 @@ static void handleInput(u32 down)
     }
 
     case VIEW_CONNECTING:
-        if (down & KEY_B) { disconnect(); g_view = VIEW_IP; }
+        if (down & KEY_B) { disconnect(); transitionTo(VIEW_IP); }
         break;
 
     case VIEW_SLOTS:
-        if (down & (KEY_UP | KEY_DOWN))   moveSel((down & KEY_UP) ? -1 : 1);
-        if (down & (KEY_LEFT | KEY_RIGHT)) moveSel((down & KEY_LEFT) ? -3 : 3);
+        if (down & KEY_UP)    moveSel(-SLOT_COLS);
+        if (down & KEY_DOWN)  moveSel(SLOT_COLS);
+        if (down & KEY_LEFT)  moveSel(-1);
+        if (down & KEY_RIGHT) moveSel(1);
         if ((down & KEY_A) && g_selectedSlot >= 0 && g_selectedSlot < g_slotCount &&
             slotJoinable(&g_slots[g_selectedSlot])) {
             sendJson("{\"type\":\"join-slot\",\"slotId\":%d}\n", g_slots[g_selectedSlot].id);
@@ -1290,6 +1423,21 @@ static void handleInput(u32 down)
             playSfx("start");
         }
         if (down & KEY_B) leaveGame();
+        if (down & KEY_TOUCH) {
+            touchPosition tp;
+            hidTouchRead(&tp);
+            int idx = slotCardAt((float)tp.px, (float)tp.py);
+            if (idx >= 0 && idx < g_slotCount) {
+                g_selectedSlot = idx;
+                if (slotJoinable(&g_slots[idx])) {
+                    sendJson("{\"type\":\"join-slot\",\"slotId\":%d}\n", g_slots[idx].id);
+                    g_votedLocal = 0;
+                    playSfx("start");
+                } else {
+                    playSfx("wrong");
+                }
+            }
+        }
         break;
 
     case VIEW_LOBBY:
@@ -1297,6 +1445,23 @@ static void handleInput(u32 down)
     case VIEW_STANDINGS:
     case VIEW_RESULTS:
         if (down & KEY_B) leaveGame();
+        break;
+
+    case VIEW_VOTEREADY:
+        if (down & KEY_B) leaveGame();
+        if (g_readyGlow == 0 && (down & (KEY_A | KEY_TOUCH))) {
+            int hit = (down & KEY_A) != 0;
+            if (down & KEY_TOUCH) {
+                touchPosition tp;
+                hidTouchRead(&tp);
+                hit = tp.px >= READY_BTN_X - 8.0f && tp.px < READY_BTN_X + READY_BTN_W + 8.0f &&
+                      tp.py >= READY_BTN_Y - 8.0f && tp.py < READY_BTN_Y + READY_BTN_H + 8.0f;
+            }
+            if (hit) {
+                g_readyGlow = 72;
+                playSfx("start");
+            }
+        }
         break;
 
     case VIEW_VOTE:
@@ -1315,7 +1480,7 @@ static void handleInput(u32 down)
 
     case VIEW_ERROR:
         if (down & KEY_A) connectToServer();
-        if (down & KEY_B) g_view = VIEW_IP;
+        if (down & KEY_B) transitionTo(VIEW_IP);
         break;
     }
 }
@@ -1332,6 +1497,8 @@ int main(void)
 
     s_topSheet = C2D_SpriteSheetLoadFromMem(topbg_t3x, (size_t)(topbg_t3x_end - topbg_t3x));
     s_botSheet = C2D_SpriteSheetLoadFromMem(botbg_t3x, (size_t)(botbg_t3x_end - botbg_t3x));
+    s_logoSheet = C2D_SpriteSheetLoadFromMem(abgamelogo_t3x, (size_t)(abgamelogo_t3x_end - abgamelogo_t3x));
+    s_warnSheet = C2D_SpriteSheetLoadFromMem(warningmsg_t3x, (size_t)(warningmsg_t3x_end - warningmsg_t3x));
 
     s_textBuf = C2D_TextBufNew(4096);
 
@@ -1352,7 +1519,7 @@ int main(void)
         u32 down = hidKeysDown();
         if (down & KEY_START) break;
 
-        handleInput(down);
+        if (g_fadePhase != 1) handleInput(down);
         tryRecv();
 
         if (g_connecting) {
@@ -1360,11 +1527,34 @@ int main(void)
             if (g_connWait <= 0) {
                 snprintf(g_errorMsg, sizeof(g_errorMsg), "No response from host");
                 disconnect();
-                g_view = VIEW_ERROR;
+                transitionTo(VIEW_ERROR);
+            }
+        }
+
+        if (g_fadePhase == 1) {
+            g_fadeAlpha += 18;
+            if (g_fadeAlpha >= 255) {
+                g_fadeAlpha = 255;
+                g_view = g_fadeNext;
+                g_fadePhase = 2;
+            }
+        } else if (g_fadePhase == 2) {
+            g_fadeAlpha -= 18;
+            if (g_fadeAlpha <= 0) {
+                g_fadeAlpha = 0;
+                g_fadePhase = 0;
             }
         }
 
         if (g_bannerTimer > 0) g_bannerTimer--;
+
+        if (g_readyGlow > 0) {
+            g_readyGlow--;
+            if (g_readyGlow == 0 && g_view == VIEW_VOTEREADY) {
+                g_voteReady = 1;
+                transitionTo(VIEW_VOTE);
+            }
+        }
 
         updateView();
 
@@ -1376,10 +1566,16 @@ int main(void)
         C2D_TargetClear(s_top, C2D_Color32(0x00, 0x00, 0x00, 0xFF));
         C2D_SceneBegin(s_top);
         drawTop();
+        if (g_fadeAlpha > 0)
+            C2D_DrawRectSolid(0.0f, 0.0f, 0.90f, TOP_W, 240.0f,
+                              C2D_Color32(0x00, 0x00, 0x00, (u32)g_fadeAlpha));
 
         C2D_TargetClear(s_bot, C2D_Color32(0x00, 0x00, 0x00, 0xFF));
         C2D_SceneBegin(s_bot);
         drawBottom();
+        if (g_fadeAlpha > 0)
+            C2D_DrawRectSolid(0.0f, 0.0f, 0.90f, BOT_W, 240.0f,
+                              C2D_Color32(0x00, 0x00, 0x00, (u32)g_fadeAlpha));
 
         C3D_FrameEnd(0);
         gspWaitForVBlank();
@@ -1392,6 +1588,8 @@ int main(void)
     if (s_textBuf) C2D_TextBufDelete(s_textBuf);
     if (s_topSheet) C2D_SpriteSheetFree(s_topSheet);
     if (s_botSheet) C2D_SpriteSheetFree(s_botSheet);
+    if (s_logoSheet) C2D_SpriteSheetFree(s_logoSheet);
+    if (s_warnSheet) C2D_SpriteSheetFree(s_warnSheet);
     C2D_Fini();
     C3D_Fini();
     gfxExit();

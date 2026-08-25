@@ -8,11 +8,6 @@
     "prebuild": "node scripts/prebuild.js",
     "build": "npm run prebuild && nexe --input server.js --output dist/AmbidexGame.exe --target windows-x64-14.15.3 --resource \"public/**/*\" --enableNodeCli"
   },
-  "pkg": {
-    "assets": [
-      "public/**/*"
-    ]
-  },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
     "@capacitor/cli": "^8.4.1",
@@ -22,9 +17,7 @@
   },
   "devDependencies": {
     "nexe": "^5.0.0-beta.4",
-    "pkg": "^5.8.1",
     "rcedit": "^5.0.2",
-    "resedit": "^3.0.2",
     "socket.io-client": "^4.8.3"
   }
 }

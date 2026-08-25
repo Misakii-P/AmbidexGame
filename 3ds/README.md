@@ -29,14 +29,14 @@ Output: `ambidex.3dsx` — copy to `sd:/3ds/` on your 3DS SD card.
 
 1. Start the server on your PC: `node server.js` (from the project root).
 2. On the 3DS, launch Ambidex Game from the Homebrew Launcher.
-3. Press A (or tap the field) to open the on-screen keyboard, enter the host IP, then select OK.
-4. Select your slot (Up/Down to navigate, A to join), then vote when the round starts.
+3. Tap the IP field (or press A) to open the on-screen keyboard, enter the host IP, then select OK.
+4. Tap a free slot card to join, then tap START when the polling warning appears and vote.
 
 ## Controls
 
-- **A / tap**: Edit IP (opens system keyboard) / Connect / Join slot / Confirm vote
-- **D-pad Up/Down**: Navigate menus
-- **D-pad Left/Right**: Page through slot lists
+- **Touch**: Edit IP / Connect / Join slot card / START vote / Confirm vote
+- **A**: Connect / Join selected slot / Confirm vote
+- **D-pad**: Navigate slot grid and vote options
 - **B**: Back / Leave game / Cancel
 - **Start**: Exit application
 

@@ -92,8 +92,7 @@ ambidex-game/
 │   └── Makefile           # devkitARM build
 ├── dist/                  # Build outputs (gitignored)
 ├── scripts/
-│   ├── prebuild.js        # Nexe icon patching
-│   ├── patch-exe.js       # Icon + version resources via rcedit
+│   ├── prebuild.js        # Patches icon into the nexe cache (pre-compile)
 │   ├── patch-gui.js       # Flips exe subsystem to GUI (no console)
 │   └── make-ico.js / generate-icons.ps1  # Icon generation
 └── capacitor.config.ts    # Capacitor configuration
